@@ -25,7 +25,6 @@ A simple command-line WhatsApp client using [whatsapp-web.js](https://github.com
 - `src/main.js`: Entry point. Run this file to start the app.
 - `src/logic.js`: Main logic (WhatsApp client, command handling, event listeners).
 - `src/utils.js`: Utility functions for encryption, decryption, and key checks.
-- `src/config.js`: Configuration (if needed).
 
 ## Setup
 

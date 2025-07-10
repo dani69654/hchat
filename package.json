@@ -19,10 +19,10 @@
     ],
     "author": "Daniele Martinelli",
     "license": "Unlicense",
-    "homepage": "https://github.com/daniele/hchat",
+    "homepage": "https://github.com/dani69654/hchat",
     "repository": {
         "type": "git",
-        "url": "https://github.com/daniele/hchat.git"
+        "url": "https://github.com/dani69654/hchat.git"
     },
     "dependencies": {
         "qrcode-terminal": "^0.12.0",
