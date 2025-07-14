@@ -2,10 +2,12 @@
     "name": "hchat",
     "version": "1.0.0",
     "description": "A simple command-line WhatsApp client with end-to-end RSA encryption, built on whatsapp-web.js.",
-    "main": "src/main.js",
+    "main": "src/main.ts",
     "scripts": {
         "test": "echo \"Error: no test specified\" && exit 1",
-        "start": "node src/main.js"
+        "start": "ts-node src/index.ts",
+        "format": "prettier --write \"src/**/*.{ts,js}\"",
+        "format:check": "prettier --check \"src/**/*.{ts,js}\""
     },
     "keywords": [
         "whatsapp",
@@ -27,5 +29,11 @@
     "dependencies": {
         "qrcode-terminal": "^0.12.0",
         "whatsapp-web.js": "^1.31.0"
+    },
+    "devDependencies": {
+        "@types/qrcode-terminal": "^0.12.2",
+        "prettier": "^3.6.2",
+        "ts-node": "^10.9.2",
+        "typescript": "^5.8.3"
     }
 }
