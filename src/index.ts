@@ -1,7 +1,8 @@
+#!/usr/bin/env node
+
 import { Client } from 'whatsapp-web.js';
-import { promptCommandList } from './utils';
+import { generateKeyPair, promptCommandList } from './utils';
 import { routeCmd, routeMessage } from './commands';
-import crypto from 'crypto';
 import qrCode from 'qrcode-terminal';
 import readline from 'readline';
 import { KeyPair, UsrPks } from './types';
@@ -22,20 +23,7 @@ const startApp = () => {
 
   client.on('ready', () => {
     console.clear();
-
-    keyPair = crypto.generateKeyPairSync('rsa', {
-      modulusLength: 2048,
-      publicKeyEncoding: {
-        type: 'spki',
-        format: 'pem',
-      },
-      privateKeyEncoding: {
-        type: 'pkcs8',
-        format: 'pem',
-      },
-    });
-    console.log('Key pair generated successfully!');
-
+    keyPair = generateKeyPair();
     promptCommandList();
   });
 
