@@ -22,20 +22,25 @@ A simple command-line WhatsApp client using [whatsapp-web.js](https://github.com
 
 ## Project Structure
 
-- `src/main.js`: Entry point. Run this file to start the app.
-- `src/logic.js`: Main logic (WhatsApp client, command handling, event listeners).
-- `src/utils.js`: Utility functions for encryption, decryption, and key checks.
+- `src/index.ts`: Entry point. Run this file to start the app.
+- `src/commands.ts`: Command handling logic for the terminal interface.
+- `src/utils.ts`: Utility functions for encryption, decryption, and key checks.
+- `src/types.ts`: TypeScript type definitions used throughout the project.
 
 ## Setup
 
 1. **Install dependencies:**
+
    ```bash
    npm install
    ```
+
 2. **Start the app:**
+
    ```bash
-   node src/main.js
+   npm run start
    ```
+
 3. **Scan the QR code** with your WhatsApp mobile app to authenticate.
 
 ## Terminal Commands
@@ -56,7 +61,3 @@ A simple command-line WhatsApp client using [whatsapp-web.js](https://github.com
 
 - Node.js v18 or higher
 - WhatsApp account
-
-## License
-
-No idea, do what u want with this. 
