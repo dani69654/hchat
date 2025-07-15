@@ -7,12 +7,37 @@ import readline from 'readline';
 import { KeyPair, UsrPks } from './lib/types';
 import { promptCommandList } from './utils/promptCommandList';
 import { generateKeyPair } from './utils/generateKeyPair';
+import inquirer from 'inquirer';
+import { checkTorConnection, getTorPuppeteerArgs } from './utils/tor';
 
 let keyPair: KeyPair | null = null;
 let userPublicKeys: UsrPks = {};
 
-const startApp = () => {
-  const client = new Client({});
+const startApp = async () => {
+  const { enableTor } = await inquirer.prompt([
+    {
+      name: 'enableTor',
+      type: 'confirm',
+      message: 'Do you want to run the app via Tor?',
+      default: true,
+    },
+  ]);
+
+  let puppeteerArgs = undefined;
+  if (enableTor) {
+    const isTor = await checkTorConnection();
+    if (!isTor) {
+      console.error('\n❌ Tor check failed: Traffic is NOT routed through Tor. Make sure Tor is running on port 9050.');
+      process.exit(1);
+    } else {
+      console.log('\n🟢 Tor check: Success! Traffic is routed through Tor.');
+      puppeteerArgs = getTorPuppeteerArgs();
+    }
+  }
+
+  const client = new Client({
+    puppeteer: puppeteerArgs ? { args: puppeteerArgs } : {},
+  });
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
