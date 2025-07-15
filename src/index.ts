@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 
 import { Client } from 'whatsapp-web.js';
-import { generateKeyPair, promptCommandList } from './utils';
 import { routeCmd, routeMessage } from './commands';
 import qrCode from 'qrcode-terminal';
 import readline from 'readline';
-import { KeyPair, UsrPks } from './types';
+import { KeyPair, UsrPks } from './lib/types';
+import { promptCommandList } from './utils/promptCommandList';
+import { generateKeyPair } from './utils/generateKeyPair';
 
 let keyPair: KeyPair | null = null;
 let userPublicKeys: UsrPks = {};
@@ -17,7 +18,7 @@ const startApp = () => {
     output: process.stdout,
   });
 
-  client.on('qr', (qr) => {
+  client.on('qr', qr => {
     qrCode.generate(qr, { small: true });
   });
 
@@ -28,7 +29,7 @@ const startApp = () => {
   });
 
   // Terminal command handling
-  rl.on('line', async (input) => {
+  rl.on('line', async input => {
     const command = input.trim();
     try {
       await routeCmd({
@@ -48,7 +49,7 @@ const startApp = () => {
   });
 
   // WhatsApp message handling
-  client.on('message_create', async (msg) => {
+  client.on('message_create', async msg => {
     try {
       await routeMessage({
         msg,

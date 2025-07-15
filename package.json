@@ -5,7 +5,7 @@
   "main": "src/main.ts",
   "bin": "./dist/index.js",
   "scripts": {
-    "test": "jest src/tests/*.test.ts --watch",
+    "test": "jest --watch",
     "start": "ts-node src/index.ts",
     "build": "tsc",
     "format": "prettier --write \"src/**/*.{ts,js}\"",
@@ -29,6 +29,7 @@
     "url": "https://github.com/dani69654/hchat.git"
   },
   "dependencies": {
+    "inquirer": "^12.7.0",
     "qrcode-terminal": "^0.12.0",
     "whatsapp-web.js": "^1.31.0"
   },

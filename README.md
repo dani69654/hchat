@@ -48,7 +48,6 @@ A simple command-line WhatsApp client using [whatsapp-web.js](https://github.com
 - `!pubkey` — Show your public key (share this with contacts for encrypted messaging)
 - `!send <chatId> <message>` — Send an encrypted message to a chat
 - `!keys` — List stored public keys
-- `!ping` — Test command
 - `!chats` — List recent chats and their IDs
 - `exit` — Quit the application
 
