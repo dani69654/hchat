@@ -1,10 +1,14 @@
 /**
- * Verifies a message signature using the sender's public key and the original message.
+ * Verifies an Ed25519 transcript signature against the sender's stored
+ * signing key. Returns false (never throws) on malformed input.
  */
-import { createVerify } from 'crypto';
-export const verifyMessage = (args: { signature: string; pubkey: string; message: string }) => {
-  const verify = createVerify('SHA256');
-  verify.update(args.message);
-  verify.end();
-  return verify.verify(args.pubkey, Buffer.from(args.signature, 'hex'));
+import { verify } from 'crypto';
+import { transcript, type Transcript } from './signMessage';
+
+export const verifyMessage = (args: Transcript & { signature: string; pubkey: string }): boolean => {
+  try {
+    return verify(null, transcript(args), args.pubkey, Buffer.from(args.signature, 'base64'));
+  } catch {
+    return false;
+  }
 };

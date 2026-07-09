@@ -1,13 +1,13 @@
 import { Client } from 'whatsapp-web.js';
 import type { Message } from 'whatsapp-web.js';
-import { store, pushEvent } from './store';
-import { PUBKEY_REQUEST } from '../lib/constants';
+import { store, pushEvent, rememberNonce } from './store';
+import { PUBKEY_REQUEST, WIRE_VERSION } from '../lib/constants';
+import type { EncryptedEnvelope } from '../lib/types';
 import { generateKeyPair } from '../utils/generateKeyPair';
-import { signMessage } from '../utils/signMessage';
 import { verifyMessage } from '../utils/verifyMessage';
 import { encryptMessage } from '../utils/encryptMessage';
 import { decryptMessage } from '../utils/decryptMessage';
-import { isPublicKey } from '../utils/isPublicKey';
+import { exportKeyBundle, parseKeyBundle } from '../utils/keyBundle';
 import { checkTorConnection, getTorPuppeteerArgs } from '../utils/tor';
 
 /**
@@ -73,7 +73,15 @@ export const startSession = async (opts: { tor: boolean }): Promise<void> => {
     store.detail = null;
     store.me = client.info?.wid?._serialized ?? null;
     store.keyPair = generateKeyPair();
-    pushEvent({ kind: 'system', text: '✅ Connected to WhatsApp. Fresh RSA key pair generated for this session.' });
+    store.seenNonces = new Set();
+    pushEvent({
+      kind: 'system',
+      text: '✅ Connected to WhatsApp. Fresh X25519 + Ed25519 identity generated for this session.',
+    });
+    pushEvent({
+      kind: 'system',
+      text: `🔐 Your key fingerprint: ${store.keyPair.fingerprint} — have contacts verify it over a trusted channel (call, in person).`,
+    });
   });
 
   client.on('disconnected', reason => {
@@ -104,63 +112,104 @@ export const startSession = async (opts: { tor: boolean }): Promise<void> => {
 };
 
 /**
- * Routes an incoming WhatsApp message, mirroring the CLI wire protocol:
- * - JSON payloads with `encrypted` + `signature` are decrypted and verified
- * - PEM public keys are stored for the sender
- * - `!pubkey` requests are answered with our public key
+ * Routes an incoming WhatsApp message (hchat v2 wire protocol):
+ * - `{hchat: 2, type: 'msg'}` envelopes are decrypted, checked and verified
+ * - `{hchat: 2, type: 'keys'}` bundles are validated and stored for the sender
+ * - `!pubkey` requests are answered with our key bundle
+ * - v1 (RSA-era) payloads are flagged as incompatible
  */
 const routeIncomingMessage = async (msg: Message): Promise<void> => {
   const body = msg.body;
 
-  let payload: { encrypted: string; signature: string } | null = null;
+  let parsed: Record<string, unknown> | null = null;
   try {
-    const parsed = JSON.parse(body);
-    if (parsed && typeof parsed === 'object' && 'encrypted' in parsed && 'signature' in parsed) {
-      payload = parsed;
-    }
+    const candidate = JSON.parse(body);
+    if (candidate && typeof candidate === 'object') parsed = candidate;
   } catch {}
 
-  if (payload) {
-    if (!store.keyPair) {
-      pushEvent({ kind: 'system', text: `❌ Cannot decrypt message from ${msg.from}: key pair not ready.` });
-      return;
-    }
-    let decrypted: string;
-    try {
-      decrypted = decryptMessage({ encryptedMessage: payload.encrypted, privateKey: store.keyPair.privateKey });
-    } catch {
-      pushEvent({
-        kind: 'system',
-        text: `⚠️ Received an encrypted message from ${msg.from} that could not be decrypted (wrong key?).`,
-      });
-      return;
-    }
-    const senderPublicKey = store.usrPks[msg.from];
-    let signature: 'valid' | 'invalid' | 'unknown' = 'unknown';
-    if (senderPublicKey) {
-      signature = verifyMessage({ message: decrypted, signature: payload.signature, pubkey: senderPublicKey })
-        ? 'valid'
-        : 'invalid';
-    }
-    pushEvent({ kind: 'incoming', from: msg.from, text: decrypted, signature });
+  if (parsed?.hchat === WIRE_VERSION && parsed.type === 'msg') {
+    handleEncryptedMessage(msg, parsed as unknown as EncryptedEnvelope);
     return;
   }
 
-  if (isPublicKey(body)) {
-    store.usrPks[msg.from] = body;
-    await msg.reply('✅ Public key received and stored!');
-    pushEvent({ kind: 'system', text: `📝 Public key received and stored for ${msg.from}.` });
+  const bundle = parseKeyBundle(body);
+  if (bundle) {
+    store.usrPks[msg.from] = bundle;
+    await msg.reply(`✅ Public key bundle received and stored! Fingerprint: ${bundle.fingerprint}`);
+    pushEvent({
+      kind: 'system',
+      text: `📝 Key bundle stored for ${msg.from}. Fingerprint: ${bundle.fingerprint} — verify it with them over a trusted channel.`,
+    });
+    return;
+  }
+
+  // v1 (RSA) clients send PEM keys or {encrypted, signature} payloads.
+  if (body.includes('-----BEGIN PUBLIC KEY-----') || (parsed && 'encrypted' in parsed && 'signature' in parsed)) {
+    pushEvent({
+      kind: 'system',
+      text: `⚠️ ${msg.from} is running an old hchat version (RSA protocol). Ask them to update — v1 payloads are not supported.`,
+    });
     return;
   }
 
   if (body === PUBKEY_REQUEST) {
     if (store.keyPair) {
-      await msg.reply(`Here's my public key:\n\n${store.keyPair.publicKey}`);
-      pushEvent({ kind: 'system', text: `🔑 Public key sent to ${msg.from} (requested).` });
+      await msg.reply(exportKeyBundle(store.keyPair));
+      pushEvent({ kind: 'system', text: `🔑 Key bundle sent to ${msg.from} (requested).` });
     } else {
       await msg.reply('❌ Key pair not ready yet');
     }
   }
+};
+
+/**
+ * Decrypts an incoming envelope, then enforces the payload checks: it must be
+ * addressed to our current identity, its nonce must be fresh, and its
+ * signature must verify against the sender's stored signing key.
+ */
+const handleEncryptedMessage = (msg: Message, envelope: EncryptedEnvelope): void => {
+  if (!store.keyPair) {
+    pushEvent({ kind: 'system', text: `❌ Cannot decrypt message from ${msg.from}: key pair not ready.` });
+    return;
+  }
+  let payload;
+  try {
+    payload = decryptMessage({ envelope, encryptionPrivateKey: store.keyPair.encryption.privateKey });
+  } catch {
+    pushEvent({
+      kind: 'system',
+      text: `⚠️ Received an encrypted message from ${msg.from} that could not be decrypted (wrong key or tampered).`,
+    });
+    return;
+  }
+  if (payload.to !== store.keyPair.fingerprint) {
+    pushEvent({
+      kind: 'system',
+      text: `⚠️ Message from ${msg.from} was encrypted for a different identity (${payload.to}) — possible forwarding of a captured message. Ignored.`,
+    });
+    return;
+  }
+  if (store.seenNonces.has(payload.nonce)) {
+    pushEvent({ kind: 'system', text: `🔁 Replay of an earlier message from ${msg.from} detected. Ignored.` });
+    return;
+  }
+  rememberNonce(payload.nonce);
+
+  const senderKeys = store.usrPks[msg.from];
+  let signature: 'valid' | 'invalid' | 'unknown' = 'unknown';
+  if (senderKeys) {
+    signature = verifyMessage({
+      message: payload.message,
+      nonce: payload.nonce,
+      sentAt: payload.sentAt,
+      to: payload.to,
+      signature: payload.signature,
+      pubkey: senderKeys.signing,
+    })
+      ? 'valid'
+      : 'invalid';
+  }
+  pushEvent({ kind: 'incoming', from: msg.from, text: payload.message, signature });
 };
 
 const requireReadyClient = (): Client => {
@@ -171,37 +220,42 @@ const requireReadyClient = (): Client => {
 };
 
 /**
- * Signs, encrypts, and sends a message to a contact whose public key we hold.
+ * Signs, encrypts (ECIES: ephemeral X25519 → HKDF → AES-256-GCM), and sends a
+ * message to a contact whose key bundle we hold. The signature is sealed
+ * inside the ciphertext.
  */
 export const sendEncrypted = async (args: { chatId: string; message: string }): Promise<void> => {
   const client = requireReadyClient();
   if (!store.keyPair) {
     throw new Error('Key pair not ready yet');
   }
-  const pubkey = store.usrPks[args.chatId];
-  if (!pubkey) {
-    throw new Error(`No public key stored for ${args.chatId}. Request their key first.`);
+  const recipient = store.usrPks[args.chatId];
+  if (!recipient) {
+    throw new Error(`No key bundle stored for ${args.chatId}. Request their key first.`);
   }
-  const signature = signMessage({ message: args.message, privateKey: store.keyPair.privateKey });
-  const encrypted = encryptMessage({ message: args.message, pubkey });
-  await client.sendMessage(args.chatId, JSON.stringify({ encrypted, signature }));
+  const wire = encryptMessage({
+    message: args.message,
+    recipient,
+    senderSigningPrivateKey: store.keyPair.signing.privateKey,
+  });
+  await client.sendMessage(args.chatId, wire);
   pushEvent({ kind: 'outgoing', to: args.chatId, text: args.message });
 };
 
 /**
- * Sends our public key to a contact so they can encrypt messages for us.
+ * Sends our key bundle to a contact so they can encrypt messages for us.
  */
 export const sharePublicKey = async (chatId: string): Promise<void> => {
   const client = requireReadyClient();
   if (!store.keyPair) {
     throw new Error('Key pair not ready yet');
   }
-  await client.sendMessage(chatId, store.keyPair.publicKey);
-  pushEvent({ kind: 'system', text: `🔑 Public key shared with ${chatId}.` });
+  await client.sendMessage(chatId, exportKeyBundle(store.keyPair));
+  pushEvent({ kind: 'system', text: `🔑 Key bundle shared with ${chatId}. Fingerprint: ${store.keyPair.fingerprint}` });
 };
 
 /**
- * Asks a contact for their public key using the `!pubkey` wire message.
+ * Asks a contact for their key bundle using the `!pubkey` wire message.
  */
 export const requestPublicKey = async (chatId: string): Promise<void> => {
   const client = requireReadyClient();
@@ -210,7 +264,7 @@ export const requestPublicKey = async (chatId: string): Promise<void> => {
 };
 
 /**
- * Lists recent chats with a flag for whether we hold the contact's public key.
+ * Lists recent chats with a flag for whether we hold the contact's key bundle.
  */
 export const listChats = async (limit = 20) => {
   const client = requireReadyClient();

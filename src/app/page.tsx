@@ -21,8 +21,8 @@ export default function Home() {
   const [selectedChat, setSelectedChat] = useState('');
   const [message, setMessage] = useState('');
   const [events, setEvents] = useState<FeedEvent[]>([]);
-  const [myPublicKey, setMyPublicKey] = useState<string | null>(null);
-  const [contactKeys, setContactKeys] = useState<{ id: string }[]>([]);
+  const [myFingerprint, setMyFingerprint] = useState<string | null>(null);
+  const [contactKeys, setContactKeys] = useState<{ id: string; fingerprint: string }[]>([]);
   const [actionError, setActionError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const feedRef = useRef<HTMLDivElement>(null);
@@ -60,7 +60,7 @@ export default function Home() {
     try {
       const res = await fetch('/api/keys');
       const data = await res.json();
-      setMyPublicKey(data.publicKey ?? null);
+      setMyFingerprint(data.fingerprint ?? null);
       setContactKeys(data.contacts ?? []);
     } catch {}
   }, []);
@@ -148,8 +148,9 @@ export default function Home() {
           {status === 'idle' || status === 'error' ? (
             <>
               <p>
-                Connect your WhatsApp account. A fresh RSA-2048 key pair is generated per session; exchange public keys
-                with a contact, then every message is signed and encrypted end-to-end.
+                Connect your WhatsApp account. A fresh X25519 + Ed25519 identity is generated per session; exchange keys
+                with a contact, then every message is end-to-end encrypted with a one-time key (AES-256-GCM) and signed
+                inside the ciphertext.
               </p>
               <label className="checkbox-row">
                 <input type="checkbox" checked={useTor} onChange={e => setUseTor(e.target.checked)} />
@@ -202,8 +203,16 @@ export default function Home() {
             </section>
 
             <section className="card">
-              <h2>My public key</h2>
-              {myPublicKey ? <pre className="pubkey-box mono">{myPublicKey}</pre> : <p className="hint">Not ready</p>}
+              <h2>My key fingerprint</h2>
+              {myFingerprint ? (
+                <pre className="pubkey-box mono">{myFingerprint}</pre>
+              ) : (
+                <p className="hint">Not ready</p>
+              )}
+              <p className="hint">
+                Have contacts verify this fingerprint over a trusted channel (call, in person) to rule out a
+                man-in-the-middle.
+              </p>
             </section>
 
             <section className="card">
@@ -213,6 +222,8 @@ export default function Home() {
                   {contactKeys.map(k => (
                     <li key={k.id} className="mono">
                       🔑 {k.id}
+                      <br />
+                      <span className="hint">{k.fingerprint}</span>
                     </li>
                   ))}
                 </ul>
@@ -305,8 +316,8 @@ export default function Home() {
               </div>
               {actionError && <p className="error-text">{actionError}</p>}
               <p className="hint">
-                Messages are signed with your private key and encrypted with the recipient&apos;s public key (RSA-2048),
-                so only short text messages are supported.
+                Each message is sealed with a one-time key (ephemeral X25519 → HKDF → AES-256-GCM) and Ed25519-signed;
+                the signature travels inside the ciphertext, so nothing about the content leaks on the wire.
               </p>
             </section>
           </main>

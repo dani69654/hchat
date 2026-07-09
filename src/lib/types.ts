@@ -1,7 +1,52 @@
-import type { KeyPairSyncResult } from 'crypto';
+/**
+ * Per-session identity: an X25519 key pair for key agreement and an Ed25519
+ * key pair for signatures, plus the fingerprint contacts verify out-of-band.
+ * All keys are PEM strings (SPKI public / PKCS8 private).
+ */
+export type IdentityKeys = {
+  encryption: { publicKey: string; privateKey: string };
+  signing: { publicKey: string; privateKey: string };
+  fingerprint: string;
+};
 
-export type KeyPair = KeyPairSyncResult<string, string>;
-export type UsrPks = Record<string, string>;
+/**
+ * A contact's public key material, parsed from their key bundle.
+ */
+export type ContactKeys = {
+  encryption: string;
+  signing: string;
+  fingerprint: string;
+};
+
+export type UsrPks = Record<string, ContactKeys>;
+
+/**
+ * Wire format of an encrypted message: an ECIES envelope. `epk` is the
+ * per-message ephemeral X25519 public key (SPKI DER, base64); `iv`, `ct` and
+ * `tag` are the AES-256-GCM parameters (base64).
+ */
+export type EncryptedEnvelope = {
+  hchat: number;
+  type: 'msg';
+  epk: string;
+  iv: string;
+  ct: string;
+  tag: string;
+};
+
+/**
+ * What lives inside the ciphertext: the message, a random per-message nonce
+ * (replay detection), the send timestamp, the recipient's key fingerprint
+ * (prevents re-encrypting a captured message to a third party), and the
+ * sender's Ed25519 signature over all of the above.
+ */
+export type SecurePayload = {
+  message: string;
+  nonce: string;
+  sentAt: number;
+  to: string;
+  signature: string;
+};
 
 /**
  * Lifecycle of the server-side WhatsApp session.
