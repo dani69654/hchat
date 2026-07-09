@@ -1,24 +1,23 @@
 {
   "name": "hchat",
-  "version": "1.0.1",
-  "description": "A simple command-line WhatsApp client with end-to-end RSA encryption, built on whatsapp-web.js.",
-  "main": "src/main.ts",
-  "bin": "./dist/index.js",
+  "version": "2.0.0",
+  "description": "A WhatsApp web client with end-to-end RSA encryption, built on whatsapp-web.js and Next.js.",
   "scripts": {
-    "test": "jest --watch",
-    "start": "ts-node src/index.ts",
-    "build": "tsc",
-    "format": "prettier --write \"src/**/*.{ts,js}\"",
-    "format:check": "prettier --check \"src/**/*.{ts,js}\""
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "format": "prettier --write \"src/**/*.{ts,tsx,js,css}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,js,css}\""
   },
   "keywords": [
     "whatsapp",
-    "cli",
     "encryption",
     "rsa",
     "whatsapp-web.js",
     "secure messaging",
-    "terminal",
+    "nextjs",
     "chat"
   ],
   "author": "Daniele Martinelli",
@@ -29,17 +28,21 @@
     "url": "https://github.com/dani69654/hchat.git"
   },
   "dependencies": {
-    "inquirer": "^12.7.0",
-    "qrcode-terminal": "^0.12.0",
-    "whatsapp-web.js": "^1.31.0"
+    "next": "^16.2.10",
+    "qrcode": "^1.5.4",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "whatsapp-web.js": "^1.34.7"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
-    "@types/qrcode-terminal": "^0.12.2",
+    "@types/node": "^20.19.0",
+    "@types/qrcode": "^1.5.5",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
     "jest": "^30.0.4",
     "prettier": "^3.6.2",
     "ts-jest": "^29.4.0",
-    "ts-node": "^10.9.2",
     "typescript": "^5.8.3"
   }
 }

@@ -1,4 +1,5 @@
 /**
- * Command prefix for terminal commands
+ * Wire-protocol message that asks a contact to reply with their public key.
+ * Kept identical to the CLI version so web and CLI clients interoperate.
  */
-export const CP = '!';
+export const PUBKEY_REQUEST = '!pubkey';

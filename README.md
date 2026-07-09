@@ -1,31 +1,34 @@
 # hchat
 
-A simple command-line WhatsApp client using [whatsapp-web.js](https://github.com/pedroslopez/whatsapp-web.js) with end-to-end RSA encryption for messages between users. This tool allows you to send and receive encrypted messages and exchange public keys with your contacts, all from your terminal.
+A WhatsApp web client built with [Next.js](https://nextjs.org) and [whatsapp-web.js](https://github.com/pedroslopez/whatsapp-web.js), with end-to-end RSA encryption for messages between users. Send and receive encrypted messages and exchange public keys with your contacts from your browser, optionally routing all WhatsApp traffic through Tor.
 
 ## Features
 
-- Connects to WhatsApp Web via QR code authentication
-- Generates an RSA key pair for your session
-- Allows you to share your public key with contacts
-- Encrypts outgoing messages with the recipient's public key
-- Decrypts incoming messages encrypted with your public key
-- Stores public keys received from contacts
-- Simple terminal command interface
+- Connects to WhatsApp Web via QR code shown in the browser
+- Optional Tor routing (SOCKS5 proxy on port 9050) with a connectivity check
+- Generates an RSA-2048 key pair per session
+- One-click public key exchange with contacts
+- Signs outgoing messages with your private key and encrypts them with the recipient's public key
+- Decrypts incoming messages and verifies their signatures
+- Live activity feed (Server-Sent Events) with chat list and stored keys
 
 ## How It Works
 
-1. On first run, the script generates an RSA key pair for your session.
-2. You can share your public key with contacts (and receive theirs) via WhatsApp messages.
-3. When you send a message using the `!send <chatId> <message>` command, the message is encrypted with the recipient's public key and sent via WhatsApp.
-4. When you receive an encrypted message (prefixed with `🔒ENC:`), it is automatically decrypted and displayed in your terminal.
-5. You can view your stored public keys and your own public key at any time.
+1. Open the app, choose whether to route through Tor, and connect. Scan the QR code with WhatsApp on your phone.
+2. Once connected, an RSA key pair is generated for the session.
+3. Select a chat, then **Request their key** / **Share my key** to exchange public keys over WhatsApp.
+4. Messages you send are signed with your private key, encrypted with the recipient's public key, and delivered as a JSON payload (`{ encrypted, signature }`).
+5. Incoming encrypted messages are decrypted with your private key and their signature is verified against the sender's stored public key.
+
+The wire protocol is unchanged from the CLI versions of hchat (`!pubkey` requests, PEM key messages, `🔒ENC:` payloads), so web and CLI clients interoperate.
 
 ## Project Structure
 
-- `src/index.ts`: Entry point. Run this file to start the app.
-- `src/commands.ts`: Command handling logic for the terminal interface.
-- `src/utils.ts`: Utility functions for encryption, decryption, and key checks.
-- `src/types.ts`: TypeScript type definitions used throughout the project.
+- `src/app/page.tsx` — the single-page UI (connect, QR, chats, keys, activity feed, composer)
+- `src/app/api/` — API routes: session lifecycle, chats, keys, send, key exchange, SSE event stream
+- `src/server/` — server-side singleton holding the whatsapp-web.js client, session state, and the activity feed
+- `src/utils/` — pure crypto utilities (RSA key generation, encrypt/decrypt, sign/verify) with tests
+- `src/lib/` — shared types and constants
 
 ## Setup
 
@@ -38,25 +41,29 @@ A simple command-line WhatsApp client using [whatsapp-web.js](https://github.com
 2. **Start the app:**
 
    ```bash
-   npm run start
+   npm run dev        # development
+   # or
+   npm run build && npm start
    ```
 
-3. **Scan the QR code** with your WhatsApp mobile app to authenticate.
+3. Open [http://localhost:3000](http://localhost:3000) and **scan the QR code** with your WhatsApp mobile app.
 
-## Terminal Commands
-
-- `!pubkey` — Show your public key (share this with contacts for encrypted messaging)
-- `!send <chatId> <message>` — Send an encrypted message to a chat
-- `!keys` — List stored public keys
-- `!chats` — List recent chats and their IDs
-- `exit` — Quit the application
+To use Tor, make sure a Tor daemon is listening on `127.0.0.1:9050` before connecting.
 
 ## Security Notes
 
-- **Key Storage:** Keys are kept in memory for the session only. If you restart the app, a new key pair is generated and previous keys are lost.
-- **Encryption:** Only messages prefixed with `🔒ENC:` are treated as encrypted. All other messages are sent/received as plain text.
+- **Key storage:** Keys are kept in server memory for the session only. Restarting the server generates a new key pair; previously stored contact keys are lost.
+- **Message size:** RSA-2048 encrypts the message directly, so only short text messages are supported.
+- **Local use:** The app has no authentication of its own — anyone who can reach the server controls your WhatsApp session. Run it locally and do not expose the port.
 
 ## Requirements
 
-- Node.js v18 or higher
+- Node.js v20 or higher
 - WhatsApp account
+- (Optional) Tor running on port 9050
+
+## Testing
+
+```bash
+npm test
+```
