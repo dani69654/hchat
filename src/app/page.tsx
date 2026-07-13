@@ -13,10 +13,13 @@ const STATUS_LABELS: Record<SessionInfo['status'], string> = {
   error: 'Error',
 };
 
+type View = 'contacts' | 'chat';
+
 export default function Home() {
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [useTor, setUseTor] = useState(true);
   const [connecting, setConnecting] = useState(false);
+  const [view, setView] = useState<View>('contacts');
   const [chats, setChats] = useState<ChatInfo[]>([]);
   const [selectedChat, setSelectedChat] = useState('');
   const [message, setMessage] = useState('');
@@ -25,27 +28,14 @@ export default function Home() {
   const [contactKeys, setContactKeys] = useState<{ id: string; fingerprint: string }[]>([]);
   const [actionError, setActionError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [exchanging, setExchanging] = useState(false);
+  const [showFingerprint, setShowFingerprint] = useState(false);
   const feedRef = useRef<HTMLDivElement>(null);
 
   const isReady = session?.status === 'ready';
-
-  // Poll session status.
-  useEffect(() => {
-    let cancelled = false;
-    const poll = async () => {
-      try {
-        const res = await fetch('/api/session');
-        const data: SessionInfo = await res.json();
-        if (!cancelled) setSession(data);
-      } catch {}
-    };
-    poll();
-    const interval = setInterval(poll, 2000);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, []);
+  const selectedChatInfo = chats.find(c => c.id === selectedChat);
+  const selectedHasKey =
+    selectedChatInfo?.hasKey || contactKeys.some(k => k.id === selectedChat);
 
   const refreshChats = useCallback(async () => {
     try {
@@ -65,17 +55,38 @@ export default function Home() {
     } catch {}
   }, []);
 
+  // Poll session status.
+  useEffect(() => {
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await fetch('/api/session');
+        const data: SessionInfo = await res.json();
+        if (!cancelled) setSession(data);
+      } catch {}
+    };
+    poll();
+    const interval = setInterval(poll, 2000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
+
   // Once ready: load chats/keys and subscribe to the event feed.
   useEffect(() => {
-    if (!isReady) return;
+    if (!isReady) {
+      setView('contacts');
+      setSelectedChat('');
+      return;
+    }
     refreshChats();
     refreshKeys();
     const source = new EventSource('/api/events');
     source.onmessage = e => {
       const event: FeedEvent = JSON.parse(e.data);
       setEvents(prev => (prev.some(p => p.id === event.id) ? prev : [...prev, event]));
-      // Key exchanges show up as system events; keep the key list fresh.
-      if (event.kind === 'system' && event.text.includes('key')) {
+      if (event.kind === 'system' && event.text.toLowerCase().includes('key')) {
         refreshKeys();
         refreshChats();
       }
@@ -83,10 +94,11 @@ export default function Home() {
     return () => source.close();
   }, [isReady, refreshChats, refreshKeys]);
 
-  // Auto-scroll the feed.
+  // Auto-scroll the feed in chat view.
   useEffect(() => {
+    if (view !== 'chat') return;
     feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight });
-  }, [events]);
+  }, [events, view, selectedChat]);
 
   const connect = async () => {
     setConnecting(true);
@@ -116,8 +128,33 @@ export default function Home() {
     return true;
   };
 
+  const selectContact = async (chat: ChatInfo) => {
+    setSelectedChat(chat.id);
+    setView('chat');
+    setMessage('');
+    setActionError(null);
+
+    if (!chat.hasKey && !contactKeys.some(k => k.id === chat.id)) {
+      setExchanging(true);
+      try {
+        await post('/api/exchange', { chatId: chat.id });
+        await refreshChats();
+        await refreshKeys();
+      } finally {
+        setExchanging(false);
+      }
+    }
+  };
+
+  const backToContacts = () => {
+    setView('contacts');
+    setSelectedChat('');
+    setMessage('');
+    setActionError(null);
+  };
+
   const send = async () => {
-    if (!selectedChat || !message.trim()) return;
+    if (!selectedChat || !message.trim() || !selectedHasKey) return;
     setSending(true);
     try {
       const ok = await post('/api/send', { chatId: selectedChat, message: message.trim() });
@@ -127,8 +164,14 @@ export default function Home() {
     }
   };
 
+  const chatEvents = events.filter(event => {
+    if (event.kind === 'incoming') return event.from === selectedChat;
+    if (event.kind === 'outgoing') return event.to === selectedChat;
+    if (event.kind === 'system') return event.text.includes(selectedChat);
+    return false;
+  });
+
   const status = session?.status ?? 'idle';
-  const selectedHasKey = chats.find(c => c.id === selectedChat)?.hasKey || contactKeys.some(k => k.id === selectedChat);
 
   return (
     <div className="app">
@@ -140,17 +183,27 @@ export default function Home() {
           {STATUS_LABELS[status]}
         </span>
         {session?.torEnabled && status !== 'idle' && <span className="badge tor">Tor</span>}
-        {session?.me && <span className="badge mono">{session.me}</span>}
+        {isReady && myFingerprint && (
+          <button className="link-btn" onClick={() => setShowFingerprint(v => !v)}>
+            {showFingerprint ? 'Hide fingerprint' : 'Your fingerprint'}
+          </button>
+        )}
       </header>
+
+      {showFingerprint && myFingerprint && (
+        <div className="card fingerprint-banner">
+          <p className="hint">Share this fingerprint with contacts over a trusted channel (call, in person):</p>
+          <pre className="pubkey-box mono">{myFingerprint}</pre>
+        </div>
+      )}
 
       {!isReady && (
         <div className="card connect-card">
           {status === 'idle' || status === 'error' ? (
             <>
               <p>
-                Connect your WhatsApp account. A fresh X25519 + Ed25519 identity is generated per session; exchange keys
-                with a contact, then every message is end-to-end encrypted with a one-time key (AES-256-GCM) and signed
-                inside the ciphertext.
+                Connect your WhatsApp account. Pick a contact and start chatting — keys are exchanged automatically
+                when both sides run hchat.
               </p>
               <label className="checkbox-row">
                 <input type="checkbox" checked={useTor} onChange={e => setUseTor(e.target.checked)} />
@@ -176,152 +229,109 @@ export default function Home() {
         </div>
       )}
 
-      {isReady && (
-        <div className="layout">
-          <aside className="sidebar">
-            <section className="card">
-              <h2>
-                Chats
-                <button className="secondary" onClick={refreshChats}>
-                  Refresh
+      {isReady && view === 'contacts' && (
+        <section className="contacts-screen">
+          <div className="contacts-toolbar">
+            <h2>Contacts</h2>
+            <button className="secondary" onClick={refreshChats}>
+              Refresh
+            </button>
+          </div>
+          <ul className="contacts-list">
+            {chats.map(chat => (
+              <li key={chat.id}>
+                <button type="button" className="contact-row" onClick={() => selectContact(chat)}>
+                  <span className="contact-avatar">{chat.name.charAt(0).toUpperCase()}</span>
+                  <span className="contact-info">
+                    <span className="contact-name">{chat.name}</span>
+                    <span className="contact-id mono">{chat.id}</span>
+                  </span>
+                  {chat.hasKey && <span className="contact-status ready">Ready</span>}
                 </button>
-              </h2>
-              <ul className="chat-list">
-                {chats.map(chat => (
-                  <li
-                    key={chat.id}
-                    className={chat.id === selectedChat ? 'selected' : ''}
-                    onClick={() => setSelectedChat(chat.id)}
-                    title={chat.id}
-                  >
-                    <span className="chat-name">{chat.name}</span>
-                    {chat.hasKey && <span className="key-dot">🔑</span>}
-                  </li>
-                ))}
-                {chats.length === 0 && <li>No chats loaded yet</li>}
-              </ul>
-            </section>
+              </li>
+            ))}
+            {chats.length === 0 && <li className="contacts-empty">No contacts loaded yet</li>}
+          </ul>
+        </section>
+      )}
 
-            <section className="card">
-              <h2>My key fingerprint</h2>
-              {myFingerprint ? (
-                <pre className="pubkey-box mono">{myFingerprint}</pre>
-              ) : (
-                <p className="hint">Not ready</p>
-              )}
-              <p className="hint">
-                Have contacts verify this fingerprint over a trusted channel (call, in person) to rule out a
-                man-in-the-middle.
-              </p>
-            </section>
+      {isReady && view === 'chat' && (
+        <section className="chat-screen">
+          <div className="chat-header">
+            <button type="button" className="secondary back-btn" onClick={backToContacts}>
+              ← Back
+            </button>
+            <div className="chat-header-info">
+              <span className="chat-header-name">{selectedChatInfo?.name ?? 'Chat'}</span>
+              <span className="chat-header-status">
+                {selectedHasKey
+                  ? '🔑 Encrypted'
+                  : exchanging
+                    ? 'Exchanging keys…'
+                    : 'Waiting for their key bundle…'}
+              </span>
+            </div>
+          </div>
 
-            <section className="card">
-              <h2>Stored contact keys</h2>
-              {contactKeys.length > 0 ? (
-                <ul className="keys-list">
-                  {contactKeys.map(k => (
-                    <li key={k.id} className="mono">
-                      🔑 {k.id}
-                      <br />
-                      <span className="hint">{k.fingerprint}</span>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="hint">No keys stored yet. Select a chat and request the contact&apos;s key.</p>
-              )}
-            </section>
-          </aside>
-
-          <main className="main">
-            <section className="card">
-              <h2>Activity</h2>
-              <div className="feed" ref={feedRef}>
-                {events.map(event => (
-                  <div key={event.id} className={`msg ${event.kind}`}>
-                    {event.kind === 'incoming' && (
-                      <div className="meta">
-                        <span className="mono">{event.from}</span>
-                        <span className={`sig ${event.signature}`}>
-                          {event.signature === 'valid'
-                            ? '✅ signature verified'
-                            : event.signature === 'invalid'
-                              ? '⚠️ invalid signature'
-                              : '⚠️ signature not verified'}
-                        </span>
-                      </div>
-                    )}
-                    {event.kind === 'outgoing' && (
-                      <div className="meta">
-                        <span className="mono">to {event.to}</span>
-                        <span>🔒 encrypted &amp; signed</span>
-                      </div>
-                    )}
-                    {event.text}
+          <div className="feed chat-feed" ref={feedRef}>
+            {chatEvents.map(event => (
+              <div key={event.id} className={`msg ${event.kind}`}>
+                {event.kind === 'incoming' && (
+                  <div className="meta">
+                    <span className={`sig ${event.signature}`}>
+                      {event.signature === 'valid'
+                        ? '✅ verified'
+                        : event.signature === 'invalid'
+                          ? '⚠️ invalid signature'
+                          : '⚠️ unverified'}
+                    </span>
                   </div>
-                ))}
-                {events.length === 0 && <p className="hint">Nothing yet. Incoming encrypted messages appear here.</p>}
-              </div>
-            </section>
-
-            <section className="card composer">
-              <div className="target">
-                {selectedChat ? (
-                  <>
-                    To: <code>{selectedChat}</code> {selectedHasKey ? '🔑' : '(no public key yet)'}
-                  </>
-                ) : (
-                  'Select a chat from the sidebar, or type a chat ID below.'
                 )}
+                {event.kind === 'outgoing' && (
+                  <div className="meta">
+                    <span>🔒 encrypted &amp; signed</span>
+                  </div>
+                )}
+                {event.text}
               </div>
-              <input
-                type="text"
-                className="mono"
-                placeholder="Chat ID (e.g. 39333xxxxxxx@c.us)"
-                value={selectedChat}
-                onChange={e => setSelectedChat(e.target.value.trim())}
-              />
-              <div className="actions-row">
-                <button
-                  className="secondary"
-                  disabled={!selectedChat}
-                  onClick={() => post('/api/pubkey/request', { chatId: selectedChat })}
-                >
-                  Request their key
-                </button>
-                <button
-                  className="secondary"
-                  disabled={!selectedChat}
-                  onClick={() => post('/api/pubkey/share', { chatId: selectedChat })}
-                >
-                  Share my key
-                </button>
-              </div>
-              <div className="composer-row">
-                <textarea
-                  rows={2}
-                  placeholder={selectedHasKey ? 'Encrypted message…' : 'Exchange keys before sending'}
-                  value={message}
-                  onChange={e => setMessage(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      send();
-                    }
-                  }}
-                />
-                <button onClick={send} disabled={sending || !selectedChat || !message.trim()}>
-                  Send 🔒
-                </button>
-              </div>
-              {actionError && <p className="error-text">{actionError}</p>}
-              <p className="hint">
-                Each message is sealed with a one-time key (ephemeral X25519 → HKDF → AES-256-GCM) and Ed25519-signed;
-                the signature travels inside the ciphertext, so nothing about the content leaks on the wire.
+            ))}
+            {chatEvents.length === 0 && (
+              <p className="hint feed-empty">
+                {selectedHasKey
+                  ? 'No messages yet. Write below to send an encrypted message.'
+                  : 'Keys are being exchanged automatically. If your contact also runs hchat, you can chat in a few seconds.'}
               </p>
-            </section>
-          </main>
-        </div>
+            )}
+          </div>
+
+          <section className="card composer">
+            <div className="composer-row">
+              <textarea
+                rows={2}
+                placeholder={
+                  selectedHasKey
+                    ? 'Encrypted message…'
+                    : exchanging
+                      ? 'Exchanging keys…'
+                      : 'Waiting for keys…'
+                }
+                value={message}
+                disabled={!selectedHasKey || exchanging}
+                onChange={e => setMessage(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    send();
+                  }
+                }}
+              />
+              <button onClick={send} disabled={sending || !selectedHasKey || !message.trim() || exchanging}>
+                Send 🔒
+              </button>
+            </div>
+            {actionError && <p className="error-text">{actionError}</p>}
+          </section>
+        </section>
       )}
     </div>
   );

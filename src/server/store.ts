@@ -15,6 +15,8 @@ export type Store = {
   client: Client | null;
   keyPair: IdentityKeys | null;
   usrPks: UsrPks;
+  /** Chats we already sent our key bundle to, so auto-replies can't loop. */
+  sharedWith: Set<string>;
   /** Nonces of messages already accepted this session, for replay detection. */
   seenNonces: Set<string>;
   events: FeedEvent[];
@@ -35,6 +37,7 @@ const createStore = (): Store => {
     client: null,
     keyPair: null,
     usrPks: {},
+    sharedWith: new Set(),
     seenNonces: new Set(),
     events: [],
     nextEventId: 1,

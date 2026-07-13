@@ -78,6 +78,7 @@ export const startSession = async (opts: { tor: boolean }): Promise<void> => {
     store.me = client.info?.wid?._serialized ?? null;
     store.keyPair = generateKeyPair();
     store.seenNonces = new Set();
+    store.sharedWith = new Set();
     pushEvent({
       kind: 'system',
       text: '✅ Connected to WhatsApp. Fresh X25519 + Ed25519 identity generated for this session.',
@@ -139,11 +140,18 @@ const routeIncomingMessage = async (msg: Message): Promise<void> => {
   const bundle = parseKeyBundle(body);
   if (bundle) {
     store.usrPks[msg.from] = bundle;
-    await msg.reply(`✅ Public key bundle received and stored! Fingerprint: ${bundle.fingerprint}`);
     pushEvent({
       kind: 'system',
       text: `📝 Key bundle stored for ${msg.from}. Fingerprint: ${bundle.fingerprint} — verify it with them over a trusted channel.`,
     });
+    // Complete the handshake automatically: reply with our own bundle, unless
+    // we already sent it (which is what triggered their bundle in the first
+    // place) — that guard is what prevents an infinite share loop.
+    if (store.keyPair && !store.sharedWith.has(msg.from)) {
+      store.sharedWith.add(msg.from);
+      await msg.reply(exportKeyBundle(store.keyPair));
+      pushEvent({ kind: 'system', text: `🔑 Key bundle sent back to ${msg.from} — keys exchanged automatically.` });
+    }
     return;
   }
 
@@ -158,6 +166,7 @@ const routeIncomingMessage = async (msg: Message): Promise<void> => {
 
   if (body === PUBKEY_REQUEST) {
     if (store.keyPair) {
+      store.sharedWith.add(msg.from);
       await msg.reply(exportKeyBundle(store.keyPair));
       pushEvent({ kind: 'system', text: `🔑 Key bundle sent to ${msg.from} (requested).` });
     } else {
@@ -254,8 +263,25 @@ export const sharePublicKey = async (chatId: string): Promise<void> => {
   if (!store.keyPair) {
     throw new Error('Key pair not ready yet');
   }
+  store.sharedWith.add(chatId);
   await client.sendMessage(chatId, exportKeyBundle(store.keyPair));
   pushEvent({ kind: 'system', text: `🔑 Key bundle shared with ${chatId}. Fingerprint: ${store.keyPair.fingerprint}` });
+};
+
+/**
+ * Kicks off an automatic key exchange with a contact. We send our bundle; if
+ * the contact runs hchat, their client stores it and replies with their own
+ * bundle (see routeIncomingMessage), completing the handshake with no manual
+ * steps on either side. No-op if we already hold their key.
+ */
+export const exchangeKeys = async (chatId: string): Promise<{ alreadyExchanged: boolean }> => {
+  requireReadyClient();
+  if (store.usrPks[chatId]) {
+    return { alreadyExchanged: true };
+  }
+  await sharePublicKey(chatId);
+  pushEvent({ kind: 'system', text: `🤝 Key exchange started with ${chatId} — waiting for their key bundle.` });
+  return { alreadyExchanged: false };
 };
 
 /**
@@ -270,7 +296,7 @@ export const requestPublicKey = async (chatId: string): Promise<void> => {
 /**
  * Lists recent chats with a flag for whether we hold the contact's key bundle.
  */
-export const listChats = async (limit = 20) => {
+export const listChats = async (limit = 50) => {
   const client = requireReadyClient();
   const chats = await client.getChats();
   return chats.slice(0, limit).map(chat => ({
