@@ -1,0 +1,12 @@
+node_modules
+.next
+.git
+.wwebjs_auth
+.wwebjs_cache
+dist
+*.tsbuildinfo
+README.md
+.claude
+Dockerfile
+docker-compose.yml
+.dockerignore

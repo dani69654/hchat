@@ -40,6 +40,32 @@ The v2 wire protocol is JSON: `{hchat: 2, type: 'keys', …}` bundles and `{hcha
 
 ## Setup
 
+### Option A: Docker (recommended)
+
+Each user runs their own instance locally and links their own phone — nothing is hosted centrally, so private keys and plaintext never leave your machine.
+
+```bash
+docker compose up --build
+```
+
+Then open [http://localhost:3000](http://localhost:3000) and scan the QR code with your WhatsApp mobile app.
+
+To route WhatsApp traffic through Tor, start the bundled Tor sidecar as well, then enable the Tor toggle in the UI:
+
+```bash
+docker compose --profile tor up --build
+```
+
+The port is bound to `127.0.0.1` on purpose: the app has no authentication of its own, so it must not be exposed to the network.
+
+Environment variables (already set appropriately in the image / compose file):
+
+- `PUPPETEER_EXECUTABLE_PATH` — path to the Chromium binary whatsapp-web.js should drive
+- `HCHAT_NO_SANDBOX=1` — launch Chromium without its sandbox (required inside containers)
+- `HCHAT_TOR_HOST` / `HCHAT_TOR_PORT` — where the Tor SOCKS5 proxy lives (default `127.0.0.1:9050`)
+
+### Option B: Node.js
+
 1. **Install dependencies:**
 
    ```bash

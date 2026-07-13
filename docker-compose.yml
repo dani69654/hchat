@@ -1,0 +1,18 @@
+services:
+  hchat:
+    build: .
+    image: hchat:latest
+    # No authentication of its own: whoever reaches this port controls your
+    # WhatsApp session. Keep it bound to localhost.
+    ports:
+      - '127.0.0.1:3000:3000'
+    environment:
+      # Points the optional Tor toggle at the sidecar below.
+      - HCHAT_TOR_HOST=tor
+    restart: unless-stopped
+
+  # Optional Tor sidecar, started only with: docker compose --profile tor up
+  tor:
+    image: osminogin/tor-simple:latest
+    profiles: ['tor']
+    restart: unless-stopped

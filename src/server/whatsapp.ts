@@ -8,7 +8,8 @@ import { verifyMessage } from '../utils/verifyMessage';
 import { encryptMessage } from '../utils/encryptMessage';
 import { decryptMessage } from '../utils/decryptMessage';
 import { exportKeyBundle, parseKeyBundle } from '../utils/keyBundle';
-import { checkTorConnection, getTorPuppeteerArgs } from '../utils/tor';
+import { checkTorConnection, getTorPuppeteerArgs, getTorSocksAddress } from '../utils/tor';
+import { getBaseBrowserArgs, getBrowserExecutablePath } from '../utils/browser';
 
 /**
  * Starts the WhatsApp session. No-op if a session is already starting or running.
@@ -26,7 +27,7 @@ export const startSession = async (opts: { tor: boolean }): Promise<void> => {
     const isTor = await checkTorConnection();
     if (!isTor) {
       store.status = 'error';
-      store.error = 'Tor check failed: traffic is NOT routed through Tor. Make sure Tor is running on port 9050.';
+      store.error = `Tor check failed: traffic is NOT routed through Tor. Make sure Tor is running on ${getTorSocksAddress()}.`;
       return;
     }
     pushEvent({ kind: 'system', text: '🟢 Tor check passed: traffic is routed through Tor.' });
@@ -34,7 +35,10 @@ export const startSession = async (opts: { tor: boolean }): Promise<void> => {
 
   store.status = 'starting';
   const client = new Client({
-    puppeteer: opts.tor ? { args: getTorPuppeteerArgs() } : {},
+    puppeteer: {
+      executablePath: getBrowserExecutablePath(),
+      args: [...getBaseBrowserArgs(), ...(opts.tor ? getTorPuppeteerArgs() : [])],
+    },
   });
   store.client = client;
 

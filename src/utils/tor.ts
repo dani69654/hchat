@@ -1,10 +1,21 @@
 import puppeteer from 'puppeteer';
+import { getBaseBrowserArgs, getBrowserExecutablePath } from './browser';
+
+/**
+ * Where the Tor SOCKS5 proxy lives. Defaults to the local daemon; overridable
+ * via env so a Tor sidecar container (docker compose --profile tor) works too.
+ */
+export const getTorSocksAddress = (): string => {
+  const host = process.env.HCHAT_TOR_HOST || '127.0.0.1';
+  const port = process.env.HCHAT_TOR_PORT || '9050';
+  return `${host}:${port}`;
+};
 
 /**
  * Returns Puppeteer args for Tor SOCKS5 proxy.
  */
 export function getTorPuppeteerArgs() {
-  return ['--proxy-server=socks5://127.0.0.1:9050'];
+  return [`--proxy-server=socks5://${getTorSocksAddress()}`];
 }
 
 /**
@@ -15,7 +26,8 @@ export const checkTorConnection = async () => {
   let browser;
   try {
     browser = await puppeteer.launch({
-      args: getTorPuppeteerArgs(),
+      executablePath: getBrowserExecutablePath(),
+      args: [...getBaseBrowserArgs(), ...getTorPuppeteerArgs()],
       headless: true,
     });
     const page = await browser.newPage();
