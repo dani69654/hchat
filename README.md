@@ -38,33 +38,44 @@ The v2 wire protocol is JSON: `{hchat: 2, type: 'keys', …}` bundles and `{hcha
 - `src/utils/` — pure crypto utilities (identity generation, key bundles, ECIES encrypt/decrypt, sign/verify) with tests
 - `src/lib/` — shared types and constants
 
-## Setup
-
-### Option A: Docker (recommended)
+## Quick Start (Docker)
 
 Each user runs their own instance locally and links their own phone — nothing is hosted centrally, so private keys and plaintext never leave your machine.
 
-```bash
-docker compose up --build
-```
-
-Then open [http://localhost:3000](http://localhost:3000) and scan the QR code with your WhatsApp mobile app.
-
-To route WhatsApp traffic through Tor, start the bundled Tor sidecar as well, then enable the Tor toggle in the UI:
+The only requirement is [Docker](https://docs.docker.com/get-docker/). No cloning, no Node.js:
 
 ```bash
-docker compose --profile tor up --build
+docker run --rm --name hchat -p 127.0.0.1:3000:3000 ghcr.io/dani69654/hchat:latest
 ```
 
-The port is bound to `127.0.0.1` on purpose: the app has no authentication of its own, so it must not be exposed to the network.
+Then open [http://localhost:3000](http://localhost:3000) and scan the QR code with your WhatsApp mobile app (**Settings → Linked Devices → Link a Device**). Press `Ctrl+C` to stop; nothing is persisted.
 
-Environment variables (already set appropriately in the image / compose file):
+To update to the latest version:
 
-- `PUPPETEER_EXECUTABLE_PATH` — path to the Chromium binary whatsapp-web.js should drive
-- `HCHAT_NO_SANDBOX=1` — launch Chromium without its sandbox (required inside containers)
-- `HCHAT_TOR_HOST` / `HCHAT_TOR_PORT` — where the Tor SOCKS5 proxy lives (default `127.0.0.1:9050`)
+```bash
+docker pull ghcr.io/dani69654/hchat:latest
+```
 
-### Option B: Node.js
+### With Tor
+
+To route all WhatsApp traffic through Tor, grab the compose file (or clone the repo), start the bundled Tor sidecar, then enable the Tor toggle in the UI:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/dani69654/hchat/main/docker-compose.yml
+docker compose --profile tor up
+```
+
+### Notes
+
+- The port is bound to `127.0.0.1` on purpose: the app has no authentication of its own, so it must not be exposed to the network.
+- The image is published automatically to [GHCR](https://github.com/dani69654/hchat/pkgs/container/hchat) for `amd64` and `arm64` (Apple Silicon) on every push to `main`.
+- Environment variables (already set appropriately in the image / compose file):
+  - `PUPPETEER_EXECUTABLE_PATH` — path to the Chromium binary whatsapp-web.js should drive
+  - `HCHAT_NO_SANDBOX=1` — launch Chromium without its sandbox (required inside containers)
+  - `HCHAT_TOR_HOST` / `HCHAT_TOR_PORT` — where the Tor SOCKS5 proxy lives (default `127.0.0.1:9050`)
+- To build the image yourself: `docker build -t ghcr.io/dani69654/hchat:latest .` (compose will then use your local build).
+
+## Setup from source (Node.js)
 
 1. **Install dependencies:**
 

@@ -1,7 +1,8 @@
+# Works standalone: download just this file and run `docker compose up`.
+# No need to clone the repository.
 services:
   hchat:
-    build: .
-    image: hchat:latest
+    image: ghcr.io/dani69654/hchat:latest
     # No authentication of its own: whoever reaches this port controls your
     # WhatsApp session. Keep it bound to localhost.
     ports:

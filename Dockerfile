@@ -13,6 +13,9 @@ RUN npm run build
 # ---- Runtime stage ----
 FROM node:22-slim AS runner
 
+# Links the GHCR package to the repository.
+LABEL org.opencontainers.image.source="https://github.com/dani69654/hchat"
+
 ENV NODE_ENV=production \
     PUPPETEER_SKIP_DOWNLOAD=true \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
